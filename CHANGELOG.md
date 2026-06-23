@@ -18,3 +18,4 @@
 - 2026-06-24T01:21:36: Implement task dependency resolution
 - 2026-06-24T02:19:12: Add manual batching logic in Orchestrator
 - 2026-06-24T03:16:48: Implement execute_task method with context injection
+- 2026-06-24T04:14:24: Add stream_events generator for SSE
