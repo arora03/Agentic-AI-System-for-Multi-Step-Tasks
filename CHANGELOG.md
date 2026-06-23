@@ -6,3 +6,4 @@
 - 2026-06-23T13:50:24: Define TaskDef pydantic model
 - 2026-06-23T14:48:00: Define Plan pydantic model
 - 2026-06-23T15:45:36: Define AgentResult pydantic model
+- 2026-06-23T16:43:12: Create BaseAgent class
