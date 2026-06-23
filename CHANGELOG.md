@@ -4,3 +4,4 @@
 - 2026-06-23T11:55:12: Setup FastAPI basic structure in main.py
 - 2026-06-23T12:52:48: Add CORS middleware to FastAPI
 - 2026-06-23T13:50:24: Define TaskDef pydantic model
+- 2026-06-23T14:48:00: Define Plan pydantic model
