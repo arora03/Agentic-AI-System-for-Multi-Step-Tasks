@@ -44,3 +44,4 @@
 - 2026-06-25T02:19:12: Add dependency arrows to task graph
 - 2026-06-25T03:16:48: Implement auto-scroll for event log
 - 2026-06-25T04:14:24: Add error boundary and toast notifications
+- 2026-06-25T05:12:00: Refine UI typography and colors
