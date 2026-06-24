@@ -26,3 +26,4 @@
 - 2026-06-24T09:02:24: Initialize Next.js App Router structure
 - 2026-06-24T10:00:00: Add Tailwind CSS configuration
 - 2026-06-24T10:57:36: Setup global CSS styles
+- 2026-06-24T11:55:12: Install framer-motion and lucide-react
