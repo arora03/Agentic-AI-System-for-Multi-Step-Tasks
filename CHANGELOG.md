@@ -37,3 +37,4 @@
 - 2026-06-24T19:36:00: Add event listener for 'plan' events
 - 2026-06-24T20:33:36: Add event listener for 'task_start' events
 - 2026-06-24T21:31:12: Add event listener for 'task_complete' events
+- 2026-06-24T22:28:48: Add event listener for 'error' events
