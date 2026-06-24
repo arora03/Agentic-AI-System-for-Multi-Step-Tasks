@@ -40,3 +40,4 @@
 - 2026-06-24T22:28:48: Add event listener for 'error' events
 - 2026-06-24T23:26:24: Implement Task Graph visualization component
 - 2026-06-25T00:24:00: Add framer-motion animations to task items
+- 2026-06-25T01:21:36: Style task items based on status (pending/running/done)
