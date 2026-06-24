@@ -21,3 +21,4 @@
 - 2026-06-24T04:14:24: Add stream_events generator for SSE
 - 2026-06-24T05:12:00: Connect Orchestrator to FastAPI /api/orchestrate endpoint
 - 2026-06-24T06:09:36: Add exception handling to planning phase
+- 2026-06-24T07:07:12: Add deadlock detection in dependency resolution
