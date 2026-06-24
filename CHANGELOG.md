@@ -41,3 +41,4 @@
 - 2026-06-24T23:26:24: Implement Task Graph visualization component
 - 2026-06-25T00:24:00: Add framer-motion animations to task items
 - 2026-06-25T01:21:36: Style task items based on status (pending/running/done)
+- 2026-06-25T02:19:12: Add dependency arrows to task graph
