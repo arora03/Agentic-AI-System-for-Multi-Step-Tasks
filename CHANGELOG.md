@@ -45,3 +45,4 @@
 - 2026-06-25T03:16:48: Implement auto-scroll for event log
 - 2026-06-25T04:14:24: Add error boundary and toast notifications
 - 2026-06-25T05:12:00: Refine UI typography and colors
+- 2026-06-25T06:09:36: Add Agent icons (Retriever, Analyzer, Writer)
