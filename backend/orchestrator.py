@@ -81,6 +81,6 @@ class Orchestrator:
     async def stream_events(self):
         while True:
             event = await self.event_queue.get()
-            yield f"data: {json.dumps(event)}\n\n"
+            yield json.dumps(event)
             if event["type"] in ["done", "error"]:
                 break
