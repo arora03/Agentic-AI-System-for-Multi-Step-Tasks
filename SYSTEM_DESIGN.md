@@ -1,39 +1,69 @@
-# System Design: Agentic AI System
+# System Design: Agentic AI Orchestrator
 
-## Architecture Overview
+## Overview
 
-This system is built using a custom Python backend (FastAPI) and a Next.js frontend, communicating via Server-Sent Events (SSE). It eschews black-box frameworks in favor of a bespoke asynchronous execution engine that demonstrates deep understanding of LLM orchestration.
+When approaching this assignment, my primary goal was to build a system that goes beyond a simple Python script. I wanted to demonstrate a production-ready, full-stack architecture capable of handling asynchronous multi-agent workflows without relying on black-box frameworks like LangChain or CrewAI. 
 
-### Components
+By building the orchestrator from scratch, I had total control over the Directed Acyclic Graph (DAG) execution, error handling, and data streaming.
 
-1.  **Frontend (Next.js + Tailwind)**: Provides a premium UI. It submits the user request and listens to the SSE stream to visualize the Directed Acyclic Graph (DAG) of tasks and agent outputs in real-time.
-2.  **Backend API (FastAPI)**: Exposes the `/api/orchestrate` endpoint. It initiates the orchestrator loop as a background task.
-3.  **Planner Agent**: Uses a rigid system prompt and JSON parsing to decompose the user's prompt into a set of discrete tasks (TaskDef) with dependencies.
-4.  **Specialized Agents (Retriever, Analyzer, Writer)**: Individual agents with specific system prompts. They execute tasks concurrently based on the dependency graph.
-5.  **Orchestrator Engine**: The core of the system. It:
-    - Evaluates the DAG.
-    - Manually batches independent tasks using `asyncio.gather`.
-    - Handles context injection from completed tasks to dependent downstream tasks.
-    - Yields state changes (Planning, Executing, Completed, Error) to the SSE stream.
+### The Stack
+*   **Frontend:** Next.js (React), TailwindCSS.
+*   **Backend:** Python, FastAPI, `asyncio`, `sse-starlette`.
+*   **LLM Provider:** Groq (`llama-3.3-70b-versatile`) chosen specifically for its ultra-low latency inference, which is critical for multi-step agent pipelines.
 
-## Data Flow
+---
+
+## Data Flow & Execution Pipeline
+
+The core of the system is the `Orchestrator` class, which manages the lifecycle of a user's request. Here is exactly how data moves through the system:
 
 ```mermaid
-graph TD
-    A[User Request] -->|POST /api/orchestrate| B(FastAPI)
-    B --> C{Planner Agent}
-    C -->|Returns JSON DAG| D[Orchestrator]
-    D -->|SSE Stream| A
-    D -->|Batch 1| E(Retriever Agent)
-    D -->|Batch 1| F(Analyzer Agent)
-    E -->|Result| D
-    F -->|Result| D
-    D -->|Batch 2| G(Writer Agent)
-    G -->|Result| D
+sequenceDiagram
+    participant User (Next.js)
+    participant API (FastAPI)
+    participant Orchestrator
+    participant Planner
+    participant Worker Agents
+
+    User (Next.js)->>API (FastAPI): POST /api/orchestrate {prompt}
+    API (FastAPI)->>Orchestrator: Initialize & Run
+    Orchestrator->>Planner: Request Task Breakdown
+    Note right of Planner: LLM generates DAG (JSON mode enforced)
+    Planner-->>Orchestrator: Returns JSON List of Tasks & Dependencies
+    Orchestrator-->>User (Next.js): SSE Stream: Yield Plan/DAG
+    
+    loop DAG Execution Loop
+        Orchestrator->>Orchestrator: Identify tasks with met dependencies
+        Note over Orchestrator, Worker Agents: asyncio.gather() triggers concurrent batch
+        Orchestrator->>Worker Agents: Execute Ready Tasks
+        Worker Agents-->>Orchestrator: Return Results
+        Orchestrator-->>User (Next.js): SSE Stream: Yield Partial Results
+    end
+    
+    Orchestrator-->>User (Next.js): SSE Stream: Orchestration Complete
 ```
+
+## Key Architectural Decisions
+
+### 1. The DAG and Manual Batching
+Instead of executing tasks strictly sequentially, the Planner agent outputs a dependency graph. 
+The Orchestrator loops through the pending tasks and filters for tasks where `all(d in completed_tasks for d in task.dependencies)`. 
+If it finds multiple independent tasks (e.g., retrieving three different topics), it bundles them into an `asyncio.gather()` call. This manual batching drastically reduces total execution time.
+
+### 2. Server-Sent Events (SSE) vs WebSockets
+I chose SSE over WebSockets for the frontend-backend communication. Since the data flow is strictly unidirectional after the initial POST request (backend streaming progress to frontend), WebSockets would have been overkill and introduced unnecessary state management overhead. SSE is lighter, natively supported by HTTP/1.1, and perfectly handles the progressive rendering of the UI.
+
+### 3. Enforced JSON Mode (Preventing Hallucinations)
+A major point of failure in custom AI systems is the LLM returning malformed JSON (like trailing commas or markdown blocks). To solve this, I strictly enforced Groq's `response_format={"type": "json_object"}` at the API level for the Planner. This guarantees 100% valid DAG structures and prevents the orchestrator from crashing due to parsing errors.
+
+### 4. Real Tool Calling
+To prove true agentic behavior, the `Retriever` agent doesn't just hallucinate facts from its training data. It extracts the core search query and uses Python's native `urllib` to hit the live Wikipedia API, extracting real-world data to feed into the DAG context. If the network call fails, it gracefully falls back to internal LLM knowledge.
+
+---
 
 ## Failure Handling
 
--   **Exponential Backoff**: BaseAgent implements a retry loop with exponential backoff for transient API failures.
--   **Structured Parsing**: PlannerAgent explicitly strips markdown formatting and uses `json.loads`. If it fails, it raises an exception that the orchestrator catches and streams back to the UI.
--   **Deadlock Detection**: The orchestrator checks if pending tasks cannot be resolved due to circular or missing dependencies, preventing infinite hangs.
+I built defense-in-depth mechanisms to handle the realities of networking and LLM volatility:
+*   **Exponential Backoff:** If the Groq API throws a 429 (Rate Limit) or 503, the `BaseAgent` catches it and retries up to 3 times with exponential backoff before failing.
+*   **Deadlock Detection:** If the Orchestrator's while-loop detects that there are pending tasks but none of them are ready to execute, it immediately halts and streams a Deadlock Error rather than hanging infinitely.
+*   **Frontend Stream Buffering:** Large LLM outputs get chopped into partial network chunks. I implemented a robust byte-buffer on the Next.js side that intercepts these chunks, waits for the `\r\n\r\n` delimiter, and safely reconstructs the payload before attempting `JSON.parse`.
