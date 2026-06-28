@@ -65,14 +65,66 @@ Return ONLY valid JSON, no other text."""
             data = json.loads(response)
             return Plan(**data)
         except Exception as e:
+            import re
+            # Fallback aggressive JSON repair
+            try:
+                match = re.search(r'\[.*\]', response, re.DOTALL)
+                if match:
+                    cleaned = re.sub(r',\s*([\]}])', r'\1', match.group(0))
+                    tasks_list = json.loads(cleaned)
+                    return Plan(tasks=tasks_list)
+            except:
+                pass
             raise Exception(f"Planner failed to parse JSON: {e}\nRaw output: {response}")
 
 class RetrieverAgent(BaseAgent):
     def __init__(self):
         super().__init__(
             name="Retriever",
-            system_prompt="You are a Retriever Agent. Your job is to gather facts, simulate web searches, and provide context. Be concise and factual."
+            system_prompt="You are a Retriever Agent. Your job is to extract the main search query from the task description. Reply with ONLY the search query term, nothing else."
         )
+
+    async def execute(self, prompt: str, retries: int = 3) -> str:
+        # Step 1: Get the search query from LLM
+        query = await super().execute(prompt, retries)
+        query = query.strip().strip('"').strip("'")
+        
+        # Step 2: Use Wikipedia API to fetch real data
+        import urllib.request
+        import urllib.parse
+        try:
+            search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(query)}&utf8=&format=json"
+            req = urllib.request.Request(search_url, headers={'User-Agent': 'Mozilla/5.0'})
+            
+            # Using run_in_executor for blocking urllib call to not block the event loop
+            loop = asyncio.get_event_loop()
+            def fetch(url):
+                with urllib.request.urlopen(req) as response:
+                    return json.loads(response.read().decode('utf-8'))
+            
+            search_data = await loop.run_in_executor(None, fetch, search_url)
+            
+            if not search_data['query']['search']:
+                return f"Real Tool Execution: No Wikipedia results found for '{query}'."
+                
+            best_title = search_data['query']['search'][0]['title']
+            summary_url = f"https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro&explaintext&titles={urllib.parse.quote(best_title)}&format=json"
+            
+            req2 = urllib.request.Request(summary_url, headers={'User-Agent': 'Mozilla/5.0'})
+            def fetch2(url):
+                with urllib.request.urlopen(req2) as response:
+                    return json.loads(response.read().decode('utf-8'))
+                    
+            summary_data = await loop.run_in_executor(None, fetch2, summary_url)
+            pages = summary_data['query']['pages']
+            extract = list(pages.values())[0].get('extract', 'No content found.')
+            
+            return f"Real Tool Execution (Wikipedia - {best_title}):\n{extract[:1500]}..." # Limit context size
+            
+        except Exception as e:
+            # Fallback to hallucination if internet/wiki fails
+            fallback_prompt = "You are a helpful assistant. Provide a comprehensive summary based on your internal knowledge. " + prompt
+            return f"Tool Execution Failed: {str(e)}. Fallback to internal knowledge: " + await super().execute(fallback_prompt, retries)
 
 class AnalyzerAgent(BaseAgent):
     def __init__(self):
