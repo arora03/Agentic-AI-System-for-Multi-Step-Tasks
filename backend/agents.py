@@ -15,18 +15,24 @@ class BaseAgent:
         self.system_prompt = system_prompt
         self.model = model
 
-    async def execute(self, prompt: str, retries: int = 3) -> str:
+    async def execute(self, prompt: str, retries: int = 3, json_mode: bool = False) -> str:
         client = get_groq_client()
+        
+        kwargs = {
+            "messages": [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            "model": self.model,
+            "temperature": 0.2
+        }
+        
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+
         for attempt in range(retries):
             try:
-                response = await client.chat.completions.create(
-                    messages=[
-                        {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
-                    model=self.model,
-                    temperature=0.2
-                )
+                response = await client.chat.completions.create(**kwargs)
                 return response.choices[0].message.content
             except Exception as e:
                 if attempt == retries - 1:
@@ -53,8 +59,8 @@ Return ONLY valid JSON, no other text."""
         )
 
     async def plan(self, user_request: str) -> Plan:
-        response = await self.execute(f"Create a plan for: {user_request}")
-        # Clean up if markdown backticks are present
+        response = await self.execute(f"Create a plan for: {user_request}", json_mode=True)
+        # Clean up if markdown backticks are present (JSON mode usually avoids this, but just in case)
         response = response.strip()
         if response.startswith("```json"):
             response = response[7:-3].strip()
