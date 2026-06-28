@@ -37,28 +37,33 @@ export default function Home() {
       
       if (!reader) return;
 
+      let buffer = "";
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n\n");
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split(/\r?\n\r?\n/);
+        buffer = parts.pop() || ""; // Keep the last incomplete part in the buffer
         
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              setEvents((prev) => [...prev, data]);
-              
-              if (data.type === "plan") {
-                setPlan(data.data);
+        for (const part of parts) {
+          const lines = part.split(/\r?\n/);
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                setEvents((prev) => [...prev, data]);
+                
+                if (data.type === "plan") {
+                  setPlan(data.data);
+                }
+                
+                if (data.type === "done" || data.type === "error") {
+                  setIsProcessing(false);
+                }
+              } catch (err) {
+                console.error("Failed to parse SSE JSON", err);
               }
-              
-              if (data.type === "done" || data.type === "error") {
-                setIsProcessing(false);
-              }
-            } catch (err) {
-              console.error("Failed to parse SSE JSON", err);
             }
           }
         }
