@@ -10,7 +10,7 @@ def get_groq_client():
     return AsyncGroq(api_key=os.environ.get("GROQ_API_KEY", "dummy"))
 
 class BaseAgent:
-    def __init__(self, name: str, system_prompt: str, model: str = "llama-3.1-70b-versatile"):
+    def __init__(self, name: str, system_prompt: str, model: str = "llama-3.3-70b-versatile"):
         self.name = name
         self.system_prompt = system_prompt
         self.model = model
