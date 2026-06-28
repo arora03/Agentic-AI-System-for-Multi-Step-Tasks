@@ -1,20 +1,25 @@
-# Post-Mortem
+# Post-Mortem: Agentic AI System
 
-## Scaling Issue Encountered / Anticipated
-**Issue:** Handling large context windows and state transfer.
-Currently, the Orchestrator passes the raw JSON dumps of completed tasks as context to downstream tasks. If the `Retriever` fetches 50,000 tokens of raw data, passing all of this to multiple subsequent agents (e.g., `Analyzer` and `Writer`) will quickly exceed the context window limits of standard LLM APIs, leading to request rejections or degraded reasoning performance.
-**Mitigation:** In the future, the state management should rely on a vector database or a summarization pipeline, where downstream agents only receive semantic embeddings or dense summaries of upstream data rather than the raw payload.
+This document reflects on the architectural decisions, challenges, and trade-offs made while building this multi-agent orchestrator from scratch.
 
-## Design Change in Hindsight
-**Change:** Agent-to-Agent Communication instead of strict DAG orchestration.
-While the centralized Orchestrator with manual batching guarantees order, it is inflexible. If the `Analyzer` realizes the `Retriever` missed something, it cannot easily ask the `Retriever` to fetch more data. In hindsight, implementing a "message bus" architecture where agents can autonomously request sub-tasks from each other (a true multi-agent swarm) would have been more robust than a top-down Planner-Orchestrator pattern.
+## 1. A Scaling Issue Anticipated
+**Context Window Bloat in the DAG**
+Currently, when a task executes, the Orchestrator injects the results of all its prerequisite tasks into the LLM's prompt context. While this works beautifully for 5-10 tasks, it will not scale. If a "Writer" agent depends on the outputs of 5 different "Analyzer" agents—and each produced a 2,000-token summary—the prompt will quickly exceed the LLM's context limit or cause the model's attention mechanism to degrade. 
+*Future Solution:* Implement a vector database (like Pinecone) or a summarization middleware layer. Instead of injecting raw dependency outputs, the system would retrieve only the most semantically relevant chunks of previous task outputs.
 
-## Explicit Trade-Offs
+## 2. A Design Change in Hindsight
+**State Management & Canceling Executions**
+In hindsight, while Server-Sent Events (SSE) was perfect for unidirectional streaming of the DAG's progress to the frontend, it lacks bi-directional communication. Once the user clicks "Submit", the FastAPI backend locks into the orchestration loop. If the user notices the Planner made a mistake on Task 1, they cannot easily hit a "Cancel" button to halt the execution midway. 
+If I were to rebuild this, I would swap SSE for WebSockets, allowing the Next.js frontend to send a `KILL` signal over the socket to gracefully terminate the `asyncio` task loop on the backend.
 
-1. **Trade-off: Custom Orchestration vs. Framework (e.g., LangChain)**
-   - **Reasoning:** I chose to build the `Orchestrator` and `Agent` classes from scratch using raw API calls and `asyncio.gather`. 
-   - **Trade-off:** This cost development time and lacks built-in tools (like automatic web searching or memory management) that LangChain provides. However, it was strictly necessary to demonstrate foundational understanding and avoid the "black box" abstraction trap, resulting in a system that is 100% transparent and easier to debug when edge cases occur.
+## 3. Two Explicit Trade-offs
 
-2. **Trade-off: HTTP Server-Sent Events (SSE) vs. WebSockets**
-   - **Reasoning:** I used SSE for the FastAPI-to-Next.js streaming connection.
-   - **Trade-off:** WebSockets allow bi-directional communication, which is useful for pausing or injecting human feedback mid-execution. SSE is unidirectional (Server to Client). I traded the bi-directional capability for SSE because SSE is significantly easier to implement robustly over HTTP/1.1, handles connection drops automatically (built-in retry), and perfectly fits the requirement of "streaming partial outputs" to the user without adding unnecessary protocol overhead.
+### Trade-off A: Custom Architecture vs. Black-Box Frameworks
+**The Decision:** I strictly adhered to the constraint of avoiding black-box frameworks like LangChain, CrewAI, or AutoGen. I built the `BaseAgent` and `Orchestrator` entirely from scratch using Python's native `asyncio` and `pydantic`.
+*   **Pros:** Complete transparency. I know exactly how retries, JSON-mode enforcement, and HTTP calls are handled. There is zero abstraction overhead, resulting in lightning-fast execution times and zero "magic" bugs.
+*   **Cons (The Trade-off):** I had to manually implement complex systems like deadlock detection, DAG topological sorting, and concurrent batching (`asyncio.gather`). Relying on a framework like LangGraph would have provided these out-of-the-box, saving development time, but it would have violated the core philosophy of demonstrating true system ownership.
+
+### Trade-off B: SSE (Server-Sent Events) vs. Polling/WebSockets
+**The Decision:** I chose SSE to stream the execution state to the Next.js frontend.
+*   **Pros:** Native HTTP support, automatic reconnection, and incredibly lightweight compared to establishing a stateful WebSocket connection. It perfectly matched the unidirectional requirement of streaming logs to the user.
+*   **Cons (The Trade-off):** As discovered during development, SSE chops massive LLM payloads into arbitrary byte chunks over the network. I had to manually engineer a stream-buffering system on the frontend to safely parse `\r\n\r\n` delimiters and prevent `JSON.parse` from crashing on partial strings. A simpler polling mechanism (where the UI fetches the state every 1 second) would have avoided this complexity, but it would have sacrificed the beautiful, real-time "streaming" UX that makes the application feel alive.
